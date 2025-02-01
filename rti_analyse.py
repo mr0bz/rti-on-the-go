@@ -236,7 +236,7 @@ def analyse(
 
 
 def main():
-    calibration_mtx_npy = Path(__file__).parent / "output/Z.npy"
+    calibration_mtx_npy = Path(__file__).parent / "output/K.npy"
     distortion_mtx_npy = Path(__file__).parent / "output/dist.npy"
     static_video = Path(__file__).parent / f"data/cam1 - static/coin{NUM_VIDEO}.mov"
     moving_video = Path(__file__).parent / f"data/cam2 - moving light/coin{NUM_VIDEO}.mp4"
