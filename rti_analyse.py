@@ -144,7 +144,7 @@ def analyse(
         cv.moveWindow("Static camera warped", 1080 // 2 + 40, 1080 // 2 + 40)
 
     # Load calibration matrix
-    Z = np.load(calibration_matrix_npy)
+    K = np.load(calibration_matrix_npy)
     dist = np.load(distortion_matrix_npy)
 
     # Get video from both cams
@@ -181,7 +181,7 @@ def analyse(
             break
 
         # undistort moving
-        frame_moving = cv.undistort(frame_moving, Z, dist)
+        frame_moving = cv.undistort(frame_moving, K, dist)
 
         # get square and circle from both cams
         square_static, circle_static = detect_square(frame_static)
@@ -197,7 +197,7 @@ def analyse(
             H2, _ = cv.findHomography(square_moving, marker)
             warped_static = cv.warpPerspective(frame_static, H1, (500, 500))
 
-            M = np.linalg.inv(Z) @ H2
+            M = np.linalg.inv(K) @ H2
             R = M[:,:2]
             T = M[:,2]
             
@@ -236,7 +236,7 @@ def analyse(
 
 
 def main():
-    calibration_mtx_npy = Path(__file__).parent / "output/Z.npy"
+    calibration_mtx_npy = Path(__file__).parent / "output/K.npy"
     distortion_mtx_npy = Path(__file__).parent / "output/dist.npy"
     static_video = Path(__file__).parent / f"data/cam1 - static/coin{NUM_VIDEO}.mov"
     moving_video = Path(__file__).parent / f"data/cam2 - moving light/coin{NUM_VIDEO}.mp4"
