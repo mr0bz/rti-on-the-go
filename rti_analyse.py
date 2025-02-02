@@ -4,8 +4,8 @@ from cv2.typing import MatLike
 from pathlib import Path
 
 ############# DEBUGGING AND TESTING PARAMETERS ############
-FLG_DEBUG = True
-NUM_VIDEO = 2  # Choose test number (1 to 4)
+FLG_DEBUG = False
+NUM_VIDEO = 3  # Choose test number (1 to 4)
 
 ################### INTERNAL PARAMETERS ###################
 SQUARE_DETECTION_BLUR_KERNEL = (5, 5)
@@ -13,7 +13,7 @@ SQUARE_DETECTION_BLUR_SIGMA = 1.5
 SQUARE_DETECTION_CONTOURS_EPS = 0.005
 SQUARE_NOT_FOUND = np.array([[-1, -1], [-1, -1], [-1, -1], [-1, -1]])
 CIRCLE_NOT_FOUND = np.array([-1, -1])
-DEFAULT_MARKER = np.array([[0, 500], [0, 0], [500, 0], [500, 500]])
+DEFAULT_MARKER = np.array([[0, 0, 1], [500, 0, 1], [500, 500, 1], [0, 500, 1]])
 DEFAULT_MARKER_CIRCLE = np.array([-43.29842, 546.0332])
 
 ####################### DEBUG UTILS #######################
@@ -21,6 +21,8 @@ COLOR_BLUE = [255, 0, 0]
 COLOR_CYAN = [255, 255, 0]
 COLOR_RED = [0, 0, 255]
 COLOR_GREEN = [0, 255, 0]
+
+DEFAULT_OUTPUT_PATH = Path(__file__).parent / "output"
 
 
 def draw_debug(img, square, circle):
@@ -160,9 +162,12 @@ def analyse(
     # static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start / static_fps))
     # moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start / moving_fps))
 
-    # Loop until static video is finished
-    n_frame = 0
+    MLIC = []
+    L = []
+    U = []
+    V = []
 
+    # Loop until static video is finished
     while static.isOpened() and moving.isOpened():
         # get static frame
         ret, frame_static = static.read()
@@ -191,25 +196,26 @@ def analyse(
         if not np.array_equal(square_static, SQUARE_NOT_FOUND) and not np.array_equal(
             square_moving, SQUARE_NOT_FOUND
         ):
-            marker3d = np.insert(marker, 2, 0, 1)
-            print(marker3d)
-            H1, _ = cv.findHomography(square_static, marker3d)
-            H2, _ = cv.findHomography(square_moving, marker)
-            warped_static = cv.warpPerspective(frame_static, H1, (500, 500))
+            # H1, _ = cv.findHomography(square_static, marker3d)
+            Hs, _ = cv.findHomography(square_static, marker)
+            Hm, _ = cv.findHomography(marker, square_moving)
+            warped_static = cv.warpPerspective(frame_static, Hs, (500, 500))
+            yuv = cv.cvtColor(warped_static, cv.COLOR_BGR2YUV)
+            MLIC.append(yuv[0])
+            U.append(yuv[1])
+            V.append(yuv[2])
 
-            M = np.linalg.inv(K) @ H2
-            R = M[:,:2]
-            T = M[:,2]
-            
-            return
+            RT = np.linalg.inv(K) @ Hm
+            R1norm = cv.norm(RT[:, 0])
+            R2norm = cv.norm(RT[:, 1])
+            alpha = np.average((R1norm, R2norm))
+            R1, R2, T = RT.T / alpha
+            R = np.column_stack((R1, R2, np.cross(R1, R2)))
+            RTinv = np.column_stack((R.T, -R.T @ T))
 
-        # TODO: invert roto-translation matrix
-
-        # TODO: calculate (u,v) coordinates
-
-        # TODO: store warped image and (u,v) on list/array
-
-        n_frame += 1
+            camera_position = RTinv @ [0, 0, 0, 1]
+            u, v, _ = camera_position / np.linalg.norm(camera_position)
+            L.append((u, v))
 
         #### DEBUG SECTION BEGIN
         if debug:
@@ -227,6 +233,13 @@ def analyse(
         #### DEBUG SECTION END
 
     # TODO: store warped image and (u,v) on .npz file
+    np.savez(
+        DEFAULT_OUTPUT_PATH / Path(moving_video_path).stem,
+        mlic=MLIC,
+        l=L,
+        u=np.average(U, axis=0),
+        v=np.average(V, axis=0),
+    )
 
     static.release()
     moving.release()
