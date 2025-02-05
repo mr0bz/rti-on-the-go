@@ -115,7 +115,7 @@ def main():
         "-o", "--mtx-output-path",
         type=str,
         help="Output path for calibration matrix.",
-        default=DEFAULT_OUTPUT_PATH / "Z.npy",
+        default=DEFAULT_OUTPUT_PATH / "K.npy",
     )
     parser.add_argument(
         "-d", "--dist-output-path",
