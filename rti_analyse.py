@@ -3,7 +3,6 @@ import warnings
 import numpy as np
 import cv2 as cv
 import librosa
-import matplotlib.pyplot as plt
 from scipy import signal
 from pathlib import Path
 from cv2.typing import MatLike
@@ -84,7 +83,6 @@ def detect_square(img: MatLike):
     contours, _ = cv.findContours(otsu, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
 
     # Ramer-Douglas-Peucker algorithm for contour approximation
-
     approx = [
         cv.approxPolyDP(c, SQUARE_DETECTION_CONTOURS_EPS * cv.arcLength(c, True), True)
         for c in contours
@@ -158,6 +156,7 @@ def analyse(
     moving_video_path: str | Path,
     calibration_matrix_npy: str | Path,
     distortion_matrix_npy: str | Path,
+    output_path: str | Path = None,
     marker=DEFAULT_MARKER,
     debug=False,
 ):
@@ -173,7 +172,7 @@ def analyse(
     static_fps = static.get(cv.CAP_PROP_FPS)
     moving_fps = moving.get(cv.CAP_PROP_FPS)
 
-    # TODO: Sync videos by audio --> set starting frames
+    # Sync videos by audio: set starting frames
     static_start, moving_start = get_videos_sync_time(
         static_video_path, moving_video_path
     )
@@ -275,9 +274,12 @@ def analyse(
                 return
         #### DEBUG SECTION END
 
-    # TODO: store warped image and (u,v) on .npz file
+    # Ensure output paths exists
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    # Store warped image and (u,v) on .npz file
     np.savez(
-        DEFAULT_OUTPUT_PATH / Path(moving_video_path).stem,
+        Path(output_path) if output_path else DEFAULT_OUTPUT_PATH / Path(moving_video_path).stem,
         mlic=MLIC,
         l=L,
         u=np.average(U, axis=0),
@@ -298,17 +300,17 @@ def main():
     parser.add_argument("moving_path", type=Path, help="Moving video file")
     parser.add_argument("calibration_path", type=Path, help="Calibration matrix ouput path")
     parser.add_argument("distortion_path", type=Path, help="Distortion matrix output path")
-    parser.add_argument(
-        "-d", "--debug", type=str, action=argparse.BooleanOptionalAction
-    )
+    parser.add_argument("-o", "--output-path", type=Path, help="Output path", default=None)
+    parser.add_argument("-d", "--debug", type=str, action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
 
     analyse(
-        args.static_path,
-        args.moving_path,
-        args.calibration_path,
-        args.distortion_path,
+        static_video_path=args.static_path,
+        moving_video_path=args.moving_path,
+        calibration_matrix_npy=args.calibration_path,
+        distortion_matrix_npy=args.distortion_path,
+        output_path=args.output_path,
         debug=args.debug,
     )
 
