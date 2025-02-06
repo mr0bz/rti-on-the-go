@@ -1,11 +1,14 @@
 import numpy as np
 import cv2 as cv
-from cv2.typing import MatLike
+import librosa
+import matplotlib.pyplot as plt
+from scipy import signal
 from pathlib import Path
+from cv2.typing import MatLike
 
 ############# DEBUGGING AND TESTING PARAMETERS ############
 FLG_DEBUG = False
-NUM_VIDEO = 3  # Choose test number (1 to 4)
+NUM_VIDEO = 1  # Choose test number (1 to 4)
 
 ################### INTERNAL PARAMETERS ###################
 SQUARE_DETECTION_BLUR_KERNEL = (5, 5)
@@ -23,6 +26,20 @@ COLOR_RED = [0, 0, 255]
 COLOR_GREEN = [0, 255, 0]
 
 DEFAULT_OUTPUT_PATH = Path(__file__).parent / "output"
+
+
+def draw_light_direction(u, v):
+    img = np.zeros((400, 400), dtype=np.uint8)
+    cv.circle(img, (200, 200), 200, (255, 255, 255), 2, cv.LINE_AA)
+
+    x = int(200 + u * 200)
+    y = int(200 + v * 200)
+
+    cv.line(img, (200, 200), (x, y), (255, 255, 255), 2, cv.LINE_AA)
+    cv.circle(img, (x, y), 20, (255, 255, 255), 2, cv.LINE_AA)
+
+    return img
+
 
 
 def draw_debug(img, square, circle):
@@ -44,10 +61,6 @@ def draw_debug(img, square, circle):
         cv.drawMarker(img, circle, COLOR_GREEN, cv.MARKER_CROSS, thickness=2)
 
     return img
-
-
-def calculate_rototranslation_matrix(H: np.matrix, K: np.matrix):
-    RT = K ^ -1
 
 
 def detect_square(img: MatLike):
@@ -119,8 +132,18 @@ def detect_square(img: MatLike):
     return internal_square, circle
 
 
-def sync_videos(video1_path: str | Path, video2_path: str | Path) -> tuple[int, int]:
-    return 0, 0
+def get_videos_sync_time(video1_path: str | Path, video2_path: str | Path) -> tuple[int, int]:
+    audio1, sr = librosa.load(Path(video1_path))
+    audio2, sr = librosa.load(Path(video2_path))
+    correlation = signal.correlate(audio1, audio2, mode="full")
+    lags = signal.correlation_lags(audio1.size, audio2.size, mode="full")
+    lag = lags[np.argmax(correlation)]
+
+    if lag < 0:
+        return 0, -lag / sr
+
+    return lag / sr, 0
+
 
 
 def analyse(
@@ -131,20 +154,6 @@ def analyse(
     marker=DEFAULT_MARKER,
     debug=False,
 ):
-    if debug:
-        # Niceties for better visualization on 2K screen
-        cv.namedWindow("Static camera", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
-        cv.namedWindow("Moving camera", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
-        cv.namedWindow("Static camera warped", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
-
-        cv.resizeWindow("Static camera", 1080 // 2, 1920 // 2)
-        cv.resizeWindow("Moving camera", 1920 // 2, 1080 // 2)
-        cv.resizeWindow("Static camera warped", 375, 375)
-
-        cv.moveWindow("Static camera", 20, 0)
-        cv.moveWindow("Moving camera", 1080 // 2 + 40, 0)
-        cv.moveWindow("Static camera warped", 1080 // 2 + 40, 1080 // 2 + 40)
-
     # Load calibration matrix
     K = np.load(calibration_matrix_npy)
     dist = np.load(distortion_matrix_npy)
@@ -158,14 +167,32 @@ def analyse(
     moving_fps = moving.get(cv.CAP_PROP_FPS)
 
     # TODO: Sync videos by audio --> set starting frames
-    # static_start, moving_start = get_videos_sync_time(static, moving)
-    # static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start / static_fps))
-    # moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start / moving_fps))
+    static_start, moving_start = get_videos_sync_time(static_video_path, moving_video_path)
+    moving_delay = moving_start - static_start
+    static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start * static_fps))
+    moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start * moving_fps))
 
     MLIC = []
     L = []
     U = []
     V = []
+
+    if debug:
+        # Niceties for better visualization on 2K screen
+        cv.namedWindow("Static camera", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
+        cv.namedWindow("Moving camera", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
+        cv.namedWindow("Static camera warped", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
+        cv.namedWindow("Light direction", cv.WINDOW_NORMAL | cv.WINDOW_GUI_NORMAL)
+
+        cv.resizeWindow("Static camera", 1080 // 2, 1920 // 2)
+        cv.resizeWindow("Moving camera", 1920 // 2, 1080 // 2)
+        cv.resizeWindow("Static camera warped", 375, 375)
+        cv.resizeWindow("Light direction", 375, 375)
+
+        cv.moveWindow("Static camera", 20, 0)
+        cv.moveWindow("Moving camera", 1080 // 2 + 40, 0)
+        cv.moveWindow("Static camera warped", 1080 // 2 + 40, 1080 // 2 + 40)
+        cv.moveWindow("Light direction", 1080 // 2 + 500, 1080 // 2 + 40)
 
     # Loop until static video is finished
     while static.isOpened() and moving.isOpened():
@@ -178,7 +205,7 @@ def analyse(
         ms = static.get(cv.CAP_PROP_POS_MSEC)
 
         # calculate moving next frame
-        moving.set(cv.CAP_PROP_POS_FRAMES, np.round(ms / 1000 * moving_fps))
+        moving.set(cv.CAP_PROP_POS_FRAMES, np.round((ms / 1000 + moving_delay) * moving_fps))
 
         # get moving frame
         ret, frame_moving = moving.read()
@@ -223,6 +250,7 @@ def analyse(
             cv.imshow("Moving camera", draw_debug(frame_moving, square_moving, circle_moving))
             if warped_static is not None:
                 cv.imshow("Static camera warped", warped_static)
+                cv.imshow("Light direction", draw_light_direction(u, v))
 
             # Press Q on keyboard to exit
             if cv.waitKey(1) & 0xFF == ord("q"):
