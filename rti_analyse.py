@@ -1,3 +1,5 @@
+import argparse
+import warnings
 import numpy as np
 import cv2 as cv
 import librosa
@@ -6,9 +8,12 @@ from scipy import signal
 from pathlib import Path
 from cv2.typing import MatLike
 
+warnings.filterwarnings("ignore")  # Needed by Librosa for video sync
+
 ############# DEBUGGING AND TESTING PARAMETERS ############
-FLG_DEBUG = False
-NUM_VIDEO = 1  # Choose test number (1 to 4)
+# Not needed but kept for emergency usage
+# FLG_DEBUG = False
+# NUM_VIDEO = 1  # Choose test number (1 to 4)
 
 ################### INTERNAL PARAMETERS ###################
 SQUARE_DETECTION_BLUR_KERNEL = (5, 5)
@@ -41,7 +46,6 @@ def draw_light_direction(u, v):
     return img
 
 
-
 def draw_debug(img, square, circle):
     if not np.array_equal(square, SQUARE_NOT_FOUND):
         cv.drawContours(img, [square], -1, COLOR_RED, 3)
@@ -65,7 +69,9 @@ def draw_debug(img, square, circle):
 
 def detect_square(img: MatLike):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    blur = cv.GaussianBlur(gray, SQUARE_DETECTION_BLUR_KERNEL, SQUARE_DETECTION_BLUR_SIGMA)
+    blur = cv.GaussianBlur(
+        gray, SQUARE_DETECTION_BLUR_KERNEL, SQUARE_DETECTION_BLUR_SIGMA
+    )
 
     # highlight black features (the square) in order to attenuate the shadow
     # NB: tophat flips blacks and whites in the image
@@ -132,7 +138,9 @@ def detect_square(img: MatLike):
     return internal_square, circle
 
 
-def get_videos_sync_time(video1_path: str | Path, video2_path: str | Path) -> tuple[int, int]:
+def get_videos_sync_time(
+    video1_path: str | Path, video2_path: str | Path
+) -> tuple[int, int]:
     audio1, sr = librosa.load(Path(video1_path))
     audio2, sr = librosa.load(Path(video2_path))
     correlation = signal.correlate(audio1, audio2, mode="full")
@@ -143,7 +151,6 @@ def get_videos_sync_time(video1_path: str | Path, video2_path: str | Path) -> tu
         return 0, -lag / sr
 
     return lag / sr, 0
-
 
 
 def analyse(
@@ -167,7 +174,9 @@ def analyse(
     moving_fps = moving.get(cv.CAP_PROP_FPS)
 
     # TODO: Sync videos by audio --> set starting frames
-    static_start, moving_start = get_videos_sync_time(static_video_path, moving_video_path)
+    static_start, moving_start = get_videos_sync_time(
+        static_video_path, moving_video_path
+    )
     moving_delay = moving_start - static_start
     static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start * static_fps))
     moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start * moving_fps))
@@ -205,7 +214,9 @@ def analyse(
         ms = static.get(cv.CAP_PROP_POS_MSEC)
 
         # calculate moving next frame
-        moving.set(cv.CAP_PROP_POS_FRAMES, np.round((ms / 1000 + moving_delay) * moving_fps))
+        moving.set(
+            cv.CAP_PROP_POS_FRAMES, np.round((ms / 1000 + moving_delay) * moving_fps)
+        )
 
         # get moving frame
         ret, frame_moving = moving.read()
@@ -246,8 +257,12 @@ def analyse(
 
         #### DEBUG SECTION BEGIN
         if debug:
-            cv.imshow("Static camera", draw_debug(frame_static, square_static, circle_static))
-            cv.imshow("Moving camera", draw_debug(frame_moving, square_moving, circle_moving))
+            cv.imshow(
+                "Static camera", draw_debug(frame_static, square_static, circle_static)
+            )
+            cv.imshow(
+                "Moving camera", draw_debug(frame_moving, square_moving, circle_moving)
+            )
             if warped_static is not None:
                 cv.imshow("Static camera warped", warped_static)
                 cv.imshow("Light direction", draw_light_direction(u, v))
@@ -277,12 +292,31 @@ def analyse(
 
 
 def main():
-    calibration_mtx_npy = Path(__file__).parent / "output/K.npy"
-    distortion_mtx_npy = Path(__file__).parent / "output/dist.npy"
-    static_video = Path(__file__).parent / f"data/cam1 - static/coin{NUM_VIDEO}.mov"
-    moving_video = Path(__file__).parent / f"data/cam2 - moving light/coin{NUM_VIDEO}.mp4"
 
-    analyse(static_video, moving_video, calibration_mtx_npy, distortion_mtx_npy, debug=FLG_DEBUG)
+    parser = argparse.ArgumentParser(description="RTI videos analysis")
+    parser.add_argument("static_path", type=Path, help="Static video file")
+    parser.add_argument("moving_path", type=Path, help="Moving video file")
+    parser.add_argument("calibration_path", type=Path, help="Calibration matrix ouput path")
+    parser.add_argument("distortion_path", type=Path, help="Distortion matrix output path")
+    parser.add_argument(
+        "-d", "--debug", type=str, action=argparse.BooleanOptionalAction
+    )
+
+    args = parser.parse_args()
+
+    analyse(
+        args.static_path,
+        args.moving_path,
+        args.calibration_path,
+        args.distortion_path,
+        debug=args.debug,
+    )
+
+    # Manual debug, not needed but kept for emergency usage
+    # calibration_mtx_npy = Path(__file__).parent / "output/K.npy"
+    # distortion_mtx_npy = Path(__file__).parent / "output/dist.npy"
+    # static_video = Path(__file__).parent / f"data/cam1 - static/coin{NUM_VIDEO}.mov"
+    # moving_video = Path(__file__).parent / f"data/cam2 - moving light/coin{NUM_VIDEO}.mp4"
 
 
 if __name__ == "__main__":
