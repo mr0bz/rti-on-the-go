@@ -68,9 +68,7 @@ def draw_debug(img, square, circle):
 
 def detect_square(img: MatLike):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-    blur = cv.GaussianBlur(
-        gray, SQUARE_DETECTION_BLUR_KERNEL, SQUARE_DETECTION_BLUR_SIGMA
-    )
+    blur = cv.GaussianBlur(gray, SQUARE_DETECTION_BLUR_KERNEL, SQUARE_DETECTION_BLUR_SIGMA)
 
     # highlight black features (the square) in order to attenuate the shadow
     # NB: tophat flips blacks and whites in the image
@@ -83,62 +81,51 @@ def detect_square(img: MatLike):
     contours, _ = cv.findContours(otsu, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
 
     # Ramer-Douglas-Peucker algorithm for contour approximation
-    approx = [
-        cv.approxPolyDP(c, SQUARE_DETECTION_CONTOURS_EPS * cv.arcLength(c, True), True)
-        for c in contours
-    ]
+    approx = [cv.approxPolyDP(c, SQUARE_DETECTION_CONTOURS_EPS * cv.arcLength(c, True), True) for c in contours]
 
     # Keep only contours with four corners (possible squares)
-    # Sort by area in order to identify the two biggest ones
     squares = [a.squeeze() for a in approx if len(a) == 4]
 
-    internal_square = SQUARE_NOT_FOUND
-    circle = CIRCLE_NOT_FOUND
-    circle_pos = None
-    if len(squares) >= 2:
-        [internal_square, external_square] = sorted(squares, key=cv.contourArea)[-2:]
+    if len(squares) < 2:
+        return SQUARE_NOT_FOUND, CIRCLE_NOT_FOUND
+    
+    # Sort by area in order to identify the two biggest ones
+    [internal_square, external_square] = sorted(squares, key=cv.contourArea)[-2:]
 
-        # STEP 1. Align internal and external squares corners
-        # Given the findContour algorithm implemented by opencv, we assume that
-        #   the corners of the external square are extracted counter-clockwise,
-        #   while the corners of the internal square are extracted clockwise,
-        #   beginning with the corner in the top-left.
-        # Source: Paper 'Topological Structural Analysis of Digitized Binary Images by Border Following', Appendix 1
-        # Useful: https://stackoverflow.com/questions/45323590/do-contours-returned-by-cvfindcontours-have-a-consistent-orientation
+    # STEP 1. Align internal and external squares corners
+    # Given the findContour algorithm implemented by opencv, we assume that
+    #   the corners of the external square are extracted counter-clockwise,
+    #   while the corners of the internal square are extracted clockwise,
+    #   beginning with the corner in the top-left.
+    # Source: Paper 'Topological Structural Analysis of Digitized Binary Images by Border Following', Appendix 1
+    # Useful: https://stackoverflow.com/questions/45323590/do-contours-returned-by-cvfindcontours-have-a-consistent-orientation
 
-        # STEP 2. Find corners pair near to the white circle
-        circles_found = 0
-        for idx in range(4):
-            # Circle is not exactly midway between the two corners
-            # Displacement values computed from the marker.svg, for better debug visualization
-            # true_midpoint = np.round((internal_square[idx] + external_square[(4-idx)%4]) / 2).astype(int)
-            i = internal_square[idx]
-            e = external_square[(4 - idx) % 4]
-            midpoint = np.round(i + (e - i) * [0.4329842, 0.460332]).astype(int)
+    # STEP 2. Find corners pair near to the white circle
+    circles_found: int = 0
+    for idx in range(4):
+        # Circle is not exactly midway between the two corners
+        # Displacement values computed from the marker.svg, for better debug visualization
+        # true_midpoint = np.round((internal_square[idx] + external_square[(4-idx)%4]) / 2).astype(int)
+        i = internal_square[idx]
+        e = external_square[(4 - idx) % 4]
+        midpoint = np.round(i + (e - i) * [0.4329842, 0.460332]).astype(int)
 
-            # Check if midpoint is black (because colors were inverted by blackhat)
-            if otsu[*midpoint[::-1]] == 0:
-                circle = midpoint
-                circle_pos = idx
-                circles_found += 1
+        # Check if midpoint is black (because colors were inverted by blackhat)
+        if otsu[*midpoint[::-1]] == 0:
+            circle = midpoint
+            circle_pos = idx
+            circles_found += 1
 
-        # STEP 3. Sort internal square corners accordingly
-        if (
-            circles_found == 1
-            and not np.array_equal(circle, CIRCLE_NOT_FOUND)
-            and circle_pos is not None
-        ):
-            internal_square = np.roll(internal_square, -circle_pos, axis=0)
-        else:
-            internal_square = SQUARE_NOT_FOUND
-            circle = CIRCLE_NOT_FOUND
+    if circles_found != 1:
+        return SQUARE_NOT_FOUND, CIRCLE_NOT_FOUND
+
+    # STEP 3. Sort internal square corners accordingly
+    internal_square = np.roll(internal_square, -circle_pos, axis=0)
 
     return internal_square, circle
 
 
-def get_videos_sync_time(
-    video1_path: str | Path, video2_path: str | Path
-) -> tuple[int, int]:
+def get_videos_sync_time(video1_path: str | Path, video2_path: str | Path) -> tuple[int, int]:
     audio1, sr = librosa.load(Path(video1_path))
     audio2, sr = librosa.load(Path(video2_path))
     correlation = signal.correlate(audio1, audio2, mode="full")
@@ -173,9 +160,7 @@ def analyse(
     moving_fps = moving.get(cv.CAP_PROP_FPS)
 
     # Sync videos by audio: set starting frames
-    static_start, moving_start = get_videos_sync_time(
-        static_video_path, moving_video_path
-    )
+    static_start, moving_start = get_videos_sync_time(static_video_path, moving_video_path)
     moving_delay = moving_start - static_start
     static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start * static_fps))
     moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start * moving_fps))
@@ -213,9 +198,7 @@ def analyse(
         ms = static.get(cv.CAP_PROP_POS_MSEC)
 
         # calculate moving next frame
-        moving.set(
-            cv.CAP_PROP_POS_FRAMES, np.round((ms / 1000 + moving_delay) * moving_fps)
-        )
+        moving.set(cv.CAP_PROP_POS_FRAMES, np.round((ms / 1000 + moving_delay) * moving_fps))
 
         # get moving frame
         ret, frame_moving = moving.read()
@@ -230,17 +213,14 @@ def analyse(
         square_moving, circle_moving = detect_square(frame_moving)
 
         # calculate both homographies
-        if not np.array_equal(square_static, SQUARE_NOT_FOUND) and not np.array_equal(
-            square_moving, SQUARE_NOT_FOUND
-        ):
-            # H1, _ = cv.findHomography(square_static, marker3d)
+        if not np.array_equal(square_static, SQUARE_NOT_FOUND) and not np.array_equal(square_moving, SQUARE_NOT_FOUND):
             Hs, _ = cv.findHomography(square_static, marker)
             Hm, _ = cv.findHomography(marker, square_moving)
             warped_static = cv.warpPerspective(frame_static, Hs, (500, 500))
             yuv = cv.cvtColor(warped_static, cv.COLOR_BGR2YUV)
-            MLIC.append(yuv[0])
-            U.append(yuv[1])
-            V.append(yuv[2])
+            MLIC.append(yuv[..., 0])
+            U.append(yuv[..., 1])
+            V.append(yuv[..., 2])
 
             RT = np.linalg.inv(K) @ Hm
             R1norm = cv.norm(RT[:, 0])
@@ -256,12 +236,8 @@ def analyse(
 
         #### DEBUG SECTION BEGIN
         if debug:
-            cv.imshow(
-                "Static camera", draw_debug(frame_static, square_static, circle_static)
-            )
-            cv.imshow(
-                "Moving camera", draw_debug(frame_moving, square_moving, circle_moving)
-            )
+            cv.imshow("Static camera", draw_debug(frame_static, square_static, circle_static))
+            cv.imshow("Moving camera", draw_debug(frame_moving, square_moving, circle_moving))
             if warped_static is not None:
                 cv.imshow("Static camera warped", warped_static)
                 cv.imshow("Light direction", draw_light_direction(u, v))
