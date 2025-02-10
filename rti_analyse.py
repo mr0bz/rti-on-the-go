@@ -9,10 +9,6 @@ from cv2.typing import MatLike
 
 warnings.filterwarnings("ignore")  # Needed by Librosa for video sync
 
-############# DEBUGGING AND TESTING PARAMETERS ############
-# Not needed but kept for emergency usage
-# FLG_DEBUG = False
-# NUM_VIDEO = 1  # Choose test number (1 to 4)
 
 ################### INTERNAL PARAMETERS ###################
 SQUARE_DETECTION_BLUR_KERNEL = (5, 5)
@@ -20,8 +16,7 @@ SQUARE_DETECTION_BLUR_SIGMA = 1.5
 SQUARE_DETECTION_CONTOURS_EPS = 0.005
 SQUARE_NOT_FOUND = np.array([[-1, -1], [-1, -1], [-1, -1], [-1, -1]])
 CIRCLE_NOT_FOUND = np.array([-1, -1])
-DEFAULT_MARKER = np.array([[0, 0, 1], [500, 0, 1], [500, 500, 1], [0, 500, 1]])
-DEFAULT_MARKER_CIRCLE = np.array([-43.29842, 546.0332])
+DEFAULT_MARKER_DIM = 400
 
 ####################### DEBUG UTILS #######################
 COLOR_BLUE = [255, 0, 0]
@@ -46,6 +41,8 @@ def draw_light_direction(u, v):
 
 
 def draw_debug(img, square, circle):
+    square = square.astype(int)
+    circle = circle.astype(int)
     if not np.array_equal(square, SQUARE_NOT_FOUND):
         cv.drawContours(img, [square], -1, COLOR_RED, 3)
         for i, point in enumerate(square):
@@ -66,7 +63,24 @@ def draw_debug(img, square, circle):
     return img
 
 
-def detect_square(img: MatLike):
+def get_videos_sync_time(video1_path: str | Path, video2_path: str | Path) -> tuple[int, int]:
+    audio1, sr = librosa.load(Path(video1_path))
+    audio2, sr = librosa.load(Path(video2_path))
+    correlation = signal.correlate(audio1, audio2, mode="full")
+    lags = signal.correlation_lags(audio1.size, audio2.size, mode="full")
+    lag = lags[np.argmax(correlation)]
+
+    if lag < 0:
+        return 0, -lag / sr
+
+    return lag / sr, 0
+
+
+def build_marker(dim: int):
+    return np.array([[0, 0, 1], [dim, 0, 1], [dim, dim, 1], [0, dim, 1]])
+
+
+def detect_square(img):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     blur = cv.GaussianBlur(gray, SQUARE_DETECTION_BLUR_KERNEL, SQUARE_DETECTION_BLUR_SIGMA)
 
@@ -75,10 +89,10 @@ def detect_square(img: MatLike):
     se = cv.getStructuringElement(cv.MORPH_RECT, (200, 200))
     bh = cv.morphologyEx(blur, cv.MORPH_BLACKHAT, se)
 
-    _, otsu = cv.threshold(bh, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+    _, thresh = cv.threshold(bh, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
 
     # Hierarchical closed contour extraction
-    contours, _ = cv.findContours(otsu, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+    contours, _ = cv.findContours(thresh, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
 
     # Ramer-Douglas-Peucker algorithm for contour approximation
     approx = [cv.approxPolyDP(c, SQUARE_DETECTION_CONTOURS_EPS * cv.arcLength(c, True), True) for c in contours]
@@ -88,9 +102,13 @@ def detect_square(img: MatLike):
 
     if len(squares) < 2:
         return SQUARE_NOT_FOUND, CIRCLE_NOT_FOUND
-    
+
     # Sort by area in order to identify the two biggest ones
     [internal_square, external_square] = sorted(squares, key=cv.contourArea)[-2:]
+
+    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    internal_square = cv.cornerSubPix(thresh, internal_square.astype("float32"), (11, 11), (-1, -1), criteria)
+    external_square = cv.cornerSubPix(thresh, external_square.astype("float32"), (11, 11), (-1, -1), criteria)
 
     # STEP 1. Align internal and external squares corners
     # Given the findContour algorithm implemented by opencv, we assume that
@@ -108,10 +126,10 @@ def detect_square(img: MatLike):
         # true_midpoint = np.round((internal_square[idx] + external_square[(4-idx)%4]) / 2).astype(int)
         i = internal_square[idx]
         e = external_square[(4 - idx) % 4]
-        midpoint = np.round(i + (e - i) * [0.4329842, 0.460332]).astype(int)
+        midpoint = i + (e - i) * [0.4329842, 0.460332]
 
         # Check if midpoint is black (because colors were inverted by blackhat)
-        if otsu[*midpoint[::-1]] == 0:
+        if thresh[*midpoint.astype(int)[::-1]] == 0:
             circle = midpoint
             circle_pos = idx
             circles_found += 1
@@ -125,26 +143,13 @@ def detect_square(img: MatLike):
     return internal_square, circle
 
 
-def get_videos_sync_time(video1_path: str | Path, video2_path: str | Path) -> tuple[int, int]:
-    audio1, sr = librosa.load(Path(video1_path))
-    audio2, sr = librosa.load(Path(video2_path))
-    correlation = signal.correlate(audio1, audio2, mode="full")
-    lags = signal.correlation_lags(audio1.size, audio2.size, mode="full")
-    lag = lags[np.argmax(correlation)]
-
-    if lag < 0:
-        return 0, -lag / sr
-
-    return lag / sr, 0
-
-
 def analyse(
     static_video_path: str | Path,
     moving_video_path: str | Path,
     calibration_matrix_npy: str | Path,
     distortion_matrix_npy: str | Path,
     output_path: str | Path = None,
-    marker=DEFAULT_MARKER,
+    marker_dim=DEFAULT_MARKER_DIM,
     debug=False,
 ):
     # Load calibration matrix
@@ -164,6 +169,8 @@ def analyse(
     moving_delay = moving_start - static_start
     static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start * static_fps))
     moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start * moving_fps))
+
+    marker = build_marker(marker_dim)
 
     MLIC = []
     L = []
@@ -216,23 +223,25 @@ def analyse(
         if not np.array_equal(square_static, SQUARE_NOT_FOUND) and not np.array_equal(square_moving, SQUARE_NOT_FOUND):
             Hs, _ = cv.findHomography(square_static, marker)
             Hm, _ = cv.findHomography(marker, square_moving)
-            warped_static = cv.warpPerspective(frame_static, Hs, (500, 500))
+            warped_static = cv.warpPerspective(frame_static, Hs, (marker_dim, marker_dim))
             yuv = cv.cvtColor(warped_static, cv.COLOR_BGR2YUV)
-            MLIC.append(yuv[..., 0])
-            U.append(yuv[..., 1])
-            V.append(yuv[..., 2])
 
-            RT = np.linalg.inv(K) @ Hm
-            R1norm = cv.norm(RT[:, 0])
-            R2norm = cv.norm(RT[:, 1])
-            alpha = np.average((R1norm, R2norm))
-            R1, R2, T = RT.T / alpha
-            R = np.column_stack((R1, R2, np.cross(R1, R2)))
-            RTinv = np.column_stack((R.T, -R.T @ T))
+            if Hm is not None and Hm.size > 0:
+                RT = np.linalg.inv(K) @ Hm
+                R1norm = cv.norm(RT[:, 0])
+                R2norm = cv.norm(RT[:, 1])
+                alpha = np.average((R1norm, R2norm))
+                R1, R2, T = RT.T / alpha
+                R = np.column_stack((R1, R2, np.cross(R1, R2)))
+                RTinv = np.column_stack((R.T, -R.T @ T))
 
-            camera_position = RTinv @ [0, 0, 0, 1]
-            u, v, _ = camera_position / np.linalg.norm(camera_position)
-            L.append((u, v))
+                camera_position = RTinv @ [0, 0, 0, 1]
+                u, v, _ = camera_position / np.linalg.norm(camera_position)
+
+                MLIC.append(yuv[..., 0])
+                U.append(yuv[..., 1])
+                V.append(yuv[..., 2])
+                L.append((u, v))
 
         #### DEBUG SECTION BEGIN
         if debug:
@@ -269,17 +278,22 @@ def analyse(
         cv.destroyAllWindows()
 
 
-def main():
-
+def init_cli():
     parser = argparse.ArgumentParser(description="RTI videos analysis")
     parser.add_argument("static_path", type=Path, help="Static video file")
     parser.add_argument("moving_path", type=Path, help="Moving video file")
     parser.add_argument("calibration_path", type=Path, help="Calibration matrix ouput path")
     parser.add_argument("distortion_path", type=Path, help="Distortion matrix output path")
+    parser.add_argument(
+        "-m", "--marker_dimension", type=int, help="Marker scale dimension", default=DEFAULT_MARKER_DIM
+    )
     parser.add_argument("-o", "--output-path", type=Path, help="Output path", default=None)
     parser.add_argument("-d", "--debug", type=str, action=argparse.BooleanOptionalAction)
+    return parser
 
-    args = parser.parse_args()
+
+def main():
+    args = init_cli().parse_args()
 
     analyse(
         static_video_path=args.static_path,
@@ -287,14 +301,9 @@ def main():
         calibration_matrix_npy=args.calibration_path,
         distortion_matrix_npy=args.distortion_path,
         output_path=args.output_path,
+        marker_dim=args.marker_dimension,
         debug=args.debug,
     )
-
-    # Manual debug, not needed but kept for emergency usage
-    # calibration_mtx_npy = Path(__file__).parent / "output/K.npy"
-    # distortion_mtx_npy = Path(__file__).parent / "output/dist.npy"
-    # static_video = Path(__file__).parent / f"data/cam1 - static/coin{NUM_VIDEO}.mov"
-    # moving_video = Path(__file__).parent / f"data/cam2 - moving light/coin{NUM_VIDEO}.mp4"
 
 
 if __name__ == "__main__":

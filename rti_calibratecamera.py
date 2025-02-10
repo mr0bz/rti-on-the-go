@@ -30,9 +30,7 @@ def calibrate_camera(
         case "random":
             sample_frames_numbers = random.sample(range(total_frames), num_frames | 20)
         case "linspace":
-            sample_frames_numbers = np.linspace(
-                start=0, stop=total_frames - 1, num=num_frames | 50, dtype=int
-            )
+            sample_frames_numbers = np.linspace(start=0, stop=total_frames - 1, num=num_frames | 50, dtype=int)
         case _:
             raise ("Unsopported sampling method")
 
@@ -55,9 +53,7 @@ def calibrate_camera(
     return ret, mtx, dist
 
 
-def calibrate_camera_from_frames(
-    images: list[MatLike], chessboard: tuple[int, int] = DEFAULT_CHESSBOARD_SIZE
-):
+def calibrate_camera_from_frames(images: list[MatLike], chessboard: tuple[int, int] = DEFAULT_CHESSBOARD_SIZE):
     """Calibrate the camera given a set of pictures of a chessboard"""
 
     # termination criteria
@@ -91,7 +87,7 @@ def calibrate_camera_from_frames(
     return ret, mtx, dist
 
 
-def main():
+def init_cli():
     parser = argparse.ArgumentParser(description="Calibrate video.")
     parser.add_argument("filename", type=str, help="Path to the calibration video file.")
     parser.add_argument(
@@ -104,27 +100,33 @@ def main():
     )
     parser.add_argument("-n", "--num-frames", type=str, help="Number of frames to use for calibration.", default=50)
     parser.add_argument(
-        "-c", "--chessboard",
+        "-c",
+        "--chessboard",
         nargs=2,
         type=int,
         help="Size of calibration chessboard (W, H).",
-        metavar=('WIDTH', 'HEIGHT'),
+        metavar=("WIDTH", "HEIGHT"),
         default=DEFAULT_CHESSBOARD_SIZE,
     )
     parser.add_argument(
-        "-o", "--mtx-output-path",
+        "-o",
+        "--mtx-output-path",
         type=str,
         help="Output path for calibration matrix.",
         default=DEFAULT_OUTPUT_PATH / "K.npy",
     )
     parser.add_argument(
-        "-d", "--dist-output-path",
+        "-d",
+        "--dist-output-path",
         type=str,
         help="Output path for distortion matrix.",
         default=DEFAULT_OUTPUT_PATH / "dist.npy",
     )
-    
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = init_cli().parse_args()
 
     _, mtx, dist = calibrate_camera(
         args.filename,
