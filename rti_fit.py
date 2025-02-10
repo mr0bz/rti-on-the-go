@@ -70,7 +70,7 @@ def main():
     xx = np.broadcast_to(steps, (args.grid_size, args.grid_size))
     yy = np.broadcast_to(steps, (args.grid_size, args.grid_size)).T
 
-    F = fit_model(l, mlic, xx, yy)
+    F = fit_model(l, mlic, xx, yy).clip(0, 255)
 
     output_path = Path(
         f"/home/roberto/Code/cv/rti-on-the-go/output/F_{args.filename.stem}_{args.interpolation_method}.npz"
