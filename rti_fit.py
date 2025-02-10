@@ -12,7 +12,6 @@ GRID_SIZE = 32
 def fit_model_rbf(l, vv, xx, yy):
     img_shape = vv.shape[-2:]
     vv = vv.reshape(vv.shape[0], -1)
-    print(l.shape, vv.shape)
     rbfi = RBFInterpolator(l, vv, kernel="linear", smoothing=1)
     return rbfi(np.vstack((xx.flatten(), yy.flatten())).T).reshape((*xx.shape, *img_shape))
 
