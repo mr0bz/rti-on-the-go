@@ -78,5 +78,5 @@ $ python rti_fit.py "./output/coin1.npz" -i RBF
 ### 4. Manual relighting
 
 ```bash
-$ python rti_relight.py "output/F_coin1_RBF.npz"
+$ python rti_relighting.py "output/F_coin1_RBF.npz"
 ```
