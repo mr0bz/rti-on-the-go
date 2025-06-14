@@ -5,7 +5,6 @@ import cv2 as cv
 import librosa
 from scipy import signal
 from pathlib import Path
-from cv2.typing import MatLike
 
 warnings.filterwarnings("ignore")  # Needed by Librosa for video sync
 
@@ -165,10 +164,12 @@ def analyse(
     moving_fps = moving.get(cv.CAP_PROP_FPS)
 
     # Sync videos by audio: set starting frames
-    static_start, moving_start = get_videos_sync_time(static_video_path, moving_video_path)
-    moving_delay = moving_start - static_start
-    static.set(cv.CAP_PROP_POS_FRAMES, np.round(static_start * static_fps))
-    moving.set(cv.CAP_PROP_POS_FRAMES, np.round(moving_start * moving_fps))
+    static_start_time, moving_start_time = get_videos_sync_time(static_video_path, moving_video_path)
+    delay = moving_start_time - static_start_time
+    static_frame_pos = np.round(static_start_time * static_fps)
+    moving_frame_pos = np.round(moving_start_time * moving_fps)
+    static.set(cv.CAP_PROP_POS_FRAMES, static_frame_pos)
+    moving.set(cv.CAP_PROP_POS_FRAMES, moving_frame_pos)
 
     marker = build_marker(marker_dim)
 
@@ -196,20 +197,9 @@ def analyse(
 
     # Loop until static video is finished
     while static.isOpened() and moving.isOpened():
-        # get static frame
-        ret, frame_static = static.read()
-        if not ret:
-            break
-
-        # get static milliseconds
-        ms = static.get(cv.CAP_PROP_POS_MSEC)
-
-        # calculate moving next frame
-        moving.set(cv.CAP_PROP_POS_FRAMES, np.round((ms / 1000 + moving_delay) * moving_fps))
-
-        # get moving frame
-        ret, frame_moving = moving.read()
-        if not ret:
+        ret1, frame_static = static.read()
+        ret2, frame_moving = moving.read()
+        if not ret1 or not ret2:
             break
 
         # undistort moving
@@ -242,6 +232,26 @@ def analyse(
                 U.append(yuv[..., 1])
                 V.append(yuv[..., 2])
                 L.append((u, v))
+
+        # Keep track of the frames and skip frames if needed
+        static_frame_pos += 1
+        moving_frame_pos += 1
+        static_time_pos = static_frame_pos / static_fps
+        moving_time_pos = moving_frame_pos / moving_fps
+
+        # Check if we need to skip frames in moving video
+        moving_frame_pos_tobe = np.round((static_time_pos + delay) * moving_fps)
+        if moving_frame_pos_tobe > moving_frame_pos + 1:
+            moving_frame_pos = moving_frame_pos_tobe
+            moving.set(cv.CAP_PROP_POS_FRAMES, moving_frame_pos)
+            print("Frame skipped in moving video")
+
+        # Check if we need to skip frames in static video
+        static_frame_pos_tobe = np.round((moving_time_pos - delay) * static_fps)
+        if static_frame_pos_tobe > static_frame_pos:
+            static_frame_pos = static_frame_pos_tobe
+            static.set(cv.CAP_PROP_POS_FRAMES, static_frame_pos)
+            print("Frame skipped in static video")
 
         #### DEBUG SECTION BEGIN
         if debug:
