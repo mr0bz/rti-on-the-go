@@ -83,7 +83,7 @@ Example using coin #1 (adjust filenames for other objects):
 python rti_calibratecamera.py "./data/cam2 - moving light/calibration.mp4"
 
 # 2. Analyse video and Fit RTI function
-python rti_analyse.py \
+python rti_analyse_and_fit.py \
     "./data/cam1 - static/coin1.mov" \
     "./data/cam2 - moving light/coin1.mp4" \
     "./output/K.npy" \
