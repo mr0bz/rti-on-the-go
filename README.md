@@ -12,29 +12,30 @@ A Python toolkit for performing Reflectance Transformation Imaging (RTI) using o
 ## Installation
 
 1. **Clone the repository:**
+
     ```bash
     git clone https://github.com/mr0bz/rti-on-the-go.git
     cd rti-on-the-go
     ```
 
 2. **Install dependencies:**
-    - It is recommended to use a virtual environment:
-        ```bash
-        python3 -m venv venv
-        source venv/bin/activate
-        ```
-    - Install required packages using [mamba](https://mamba.readthedocs.io/en/latest/):
-        ```bash
-        mamba install numpy opencv scipy matplotlib librosa
-        ```
-      If you don't have `mamba`, you can install it with:
-        ```bash
-        conda install mamba -c conda-forge
-        ```
-    - Alternatively, you can use `pip`:
-        ```bash
-        pip install numpy opencv-python scipy matplotlib librosa
-        ```
+
+    Using `conda`:
+
+    ```bash
+    conda create --name myenv
+    conda activate myenv
+    conda install mamba -c conda-forge
+    mamba install numpy opencv scipy matplotlib librosa
+    ```
+
+    Using `pip`:
+
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install numpy opencv-python scipy matplotlib librosa
+    ```
 
 ## Usage
 
@@ -51,26 +52,21 @@ python rti_calibratecamera.py <calibration_video> \
     [-d DIST_OUTPUT_PATH]
 ```
 
-### 2. Video Analysis
+### 2. Video analysis and Fit RTI function
 
 Analyze static and moving light videos to extract RTI data:
 
 ```bash
-python rti_analyse.py <static_path> <moving_path> <calibration_path> <distortion_path> \
+python rti_analyse_and_fit.py <static_path> <moving_path> <calibration_path> <distortion_path> \
     [-m MARKER_DIMENSION] \
-    [-o OUTPUT_PATH] \
-    [-d | --debug | --no-debug]
+    [-i {RBF,POLY}] \
+    [-g GRID_SIZE] \
+    [-o OUTPUT_DIR] \
+    [-f | --force]
+    [-d | --debug]
 ```
 
-### 3. Fit RTI Function
-
-Fit an RTI model (RBF or POLY) to the extracted data:
-
-```bash
-python rti_fit.py <input_data.npz> [-i {RBF,POLY}] [-g GRID_SIZE]
-```
-
-### 4. Manual Relighting
+### 3. Manual Relighting
 
 Interactively relight the object using the fitted RTI model:
 
@@ -86,18 +82,16 @@ Example using coin #1 (adjust filenames for other objects):
 # 1. Calibrate camera
 python rti_calibratecamera.py "./data/cam2 - moving light/calibration.mp4"
 
-# 2. Analyse videos
+# 2. Analyse video and Fit RTI function
 python rti_analyse.py \
     "./data/cam1 - static/coin1.mov" \
     "./data/cam2 - moving light/coin1.mp4" \
     "./output/K.npy" \
     "./output/dist.npy" \
+    -i RBF
     --debug
 
-# 3. Fit function (e.g., RBF)
-python rti_fit.py "./output/coin1.npz" -i RBF
-
-# 4. Manual relighting
+# 3. Manual relighting
 python rti_relighting.py "output/F_coin1_RBF.npz"
 ```
 
