@@ -262,6 +262,7 @@ def analyse(
     # Ensure output paths exists
     if output_path:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    
     # Store warped image and (u,v) on .npz file
     np.savez(
         Path(output_path) if output_path else DEFAULT_OUTPUT_PATH / Path(moving_video_path).stem,

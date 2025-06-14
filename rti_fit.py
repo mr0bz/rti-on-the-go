@@ -45,6 +45,12 @@ def init_cli():
         choices=["RBF", "POLY"],
     )
     parser.add_argument("-g", "--grid-size", type=str, help="Granularity of light interpolation.", default=GRID_SIZE)
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="Output path for fitted values."
+    )
     return parser
 
 
@@ -72,11 +78,12 @@ def main():
 
     F = fit_model(l, mlic, xx, yy).clip(0, 255)
 
-    output_path = Path(
-        f"/home/roberto/Code/cv/rti-on-the-go/output/F_{args.filename.stem}_{args.interpolation_method}.npz"
+    output_path = args.output or Path(
+        f"{DEFAULT_OUTPUT_PATH}/F_{args.filename.stem}_{args.interpolation_method}.npz"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(output_path, f=F, u=u, v=v)
+    print(f"Fitted values saved to {output_path}")
 
 
 if __name__ == "__main__":

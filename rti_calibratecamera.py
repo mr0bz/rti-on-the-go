@@ -28,7 +28,7 @@ def calibrate_camera(
 
     match sampling_method:
         case "random":
-            sample_frames_numbers = random.sample(range(total_frames), num_frames | 20)
+            sample_frames_numbers = random.sample(range(total_frames), num_frames | 50)
         case "linspace":
             sample_frames_numbers = np.linspace(start=0, stop=total_frames - 1, num=num_frames | 50, dtype=int)
         case _:
@@ -111,14 +111,14 @@ def init_cli():
     parser.add_argument(
         "-o",
         "--mtx-output-path",
-        type=str,
+        type=Path,
         help="Output path for calibration matrix.",
         default=DEFAULT_OUTPUT_PATH / "K.npy",
     )
     parser.add_argument(
         "-d",
         "--dist-output-path",
-        type=str,
+        type=Path,
         help="Output path for distortion matrix.",
         default=DEFAULT_OUTPUT_PATH / "dist.npy",
     )
